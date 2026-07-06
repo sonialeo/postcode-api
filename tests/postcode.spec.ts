@@ -1,8 +1,8 @@
 import { test, expect } from '@playwright/test';
-import { PostcodeClient } from '../clients/postcodeClient';
-import { testData } from '../test-data/postcodes';
-import { postcodeSchema } from '../schemas/postcode.schema';
-import { validateSchema } from '../utils/ajvValidator';
+import { PostcodeClient } from '../src/clients/postcodeClient';
+import { testData } from '../src/test-data/postcodes';
+import { postcodeSchema } from '../src/schemas/postcode.schema';
+import { validateSchema } from '../src/utils/ajvValidator';
 
 test.describe('Zippopotam.us Postcode API', () => {
   let client: PostcodeClient;
@@ -103,7 +103,7 @@ test.describe('Zippopotam.us Postcode API', () => {
   });
 
   // -----------------------------
-  // NON-FUNCTIONAL TEST
+  // PERFORMANCE SMOKE TEST
   // -----------------------------
 
   test('Response time should be under 2 seconds (US postcode)', async () => {

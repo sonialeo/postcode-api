@@ -1,0 +1,362 @@
+Postcode API Automation Exercise
+Candidate: Sonia Leo
+
+---------------------------------------------------------
+1. Overview
+---------------------------------------------------------
+
+Automation suite for testing Zippopotam.us API using Playwright Test.
+
+---------------------------------------------------------
+2. Approach
+---------------------------------------------------------
+
+The backlog specifies postcode retrieval for the US and Great Britain only. I chose Playwright with TypeScript because it provides native API testing support through APIRequestContext, reducing external dependencies while providing a robust test runner.
+
+The solution separates responsibilities into:
+
+Client layer for API interactions
+Test data for reusable expected values
+JSON schema for contract validation
+AJV utility for schema validation
+Playwright specification containing functional, negative, contract and performance smoke tests
+
+---------------------------------------------------------
+3. BDD Scenarios
+---------------------------------------------------------
+
+Feature:
+
+```gherkin
+Feature: Retrieve postcode information
+
+  As a third-party developer
+  I want to retrieve postcode information
+  So that I can validate postcode details for supported countries
+
+  Background:
+     Given the postcode API base URL is "https://api.zippopotam.us"
+    And the postcode API is available
+
+  Scenario Outline: Retrieve postcode information for a valid postcode
+    When I request postcode "<postcode>" for country "<country>"
+    Then the response status should be 200
+    And the country should be "<expectedCountry>"
+    And the postcode should be "<postcode>"
+    And at least one place should be returned
+
+    Examples:
+      | country | postcode  | expectedCountry |
+      | us      | 90210     | United States   |
+      | gb      | AB10      | Great Britain   |
+
+  Scenario Outline: Invalid postcode returns 404
+    When I request postcode "<postcode>" for country "<country>"
+    Then the response status should be 404
+
+    Examples:
+      | country | postcode |
+      | us      | INVALID  |
+      | gb      | INVALID  |
+
+  Scenario: Invalid endpoint returns 404
+    When I request an endpoint that does not exist
+    Then the response status should be 404
+
+  Scenario: Response body should match the postcode API contract
+    When I request postcode "90210" for country "us"
+    Then the response status should be 200
+    And the response should match the postcode schema
+```
+
+---------------------------------------------------------
+4. Project Structure
+---------------------------------------------------------
+
+src
+├── clients
+│   └── postcodeClient.ts
+├── schemas
+│   └── postcode.schema.ts
+├── test-data
+│   └── postcodes.ts
+├── utils
+│   └── ajvValidator.ts
+tests
+├── postcode.spec.ts
+features
+├── postcode.feature
+
+---------------------------------------------------------
+5. Automation Code
+---------------------------------------------------------
+
+5.1 postcodeClient.ts
+
+import { APIRequestContext } from '@playwright/test';
+
+export class PostcodeClient {
+  constructor(private request: APIRequestContext) {}
+
+  async getPostcode(country: string, postcode: string) {
+    return await this.request.get(`/${country}/${postcode}`);
+  }
+}
+
+---------------------------------------------------------
+
+5.2 postcode.schema.ts
+
+export const postcodeSchema = {
+  type: 'object',
+  required: ['country', 'post code', 'places'],
+  additionalProperties: false,
+
+  properties: {
+    country: { type: 'string' },
+    'country abbreviation': { type: 'string' },
+    'post code': { type: 'string' },
+
+    places: {
+      type: 'array',
+      minItems: 1,
+      items: {
+        type: 'object',
+        required: [
+          'place name',
+          'longitude',
+          'latitude',
+          'state',
+          'state abbreviation'
+        ],
+        additionalProperties: false,
+
+        properties: {
+          'place name': { type: 'string' },
+          longitude: { type: 'string' },
+          latitude: { type: 'string' },
+          state: { type: 'string' },
+          'state abbreviation': { type: 'string' }
+        }
+      }
+    }
+  }
+};
+
+---------------------------------------------------------
+
+5.3 postcodes.ts
+
+export const testData = {
+  us: {
+    validPostcode: '90210',
+    country: 'United States',
+    countryAbbreviation: 'US'
+  },
+  gb: {
+    validPostcode: 'AB10',
+    country: 'Great Britain',
+    countryAbbreviation: 'GB'
+  }
+};
+
+---------------------------------------------------------
+
+5.4 ajvValidator.ts
+
+import Ajv from 'ajv';
+
+const ajv = new Ajv();
+
+export function validateSchema(schema: object, data: any): boolean {
+  const validate = ajv.compile(schema);
+  const valid = validate(data);
+
+  if (!valid) {
+    console.error(validate.errors);
+  }
+
+  return valid as boolean;
+}
+
+---------------------------------------------------------
+
+5.5 postcode.spec.ts
+
+import { test, expect } from '@playwright/test';
+import { PostcodeClient } from '../clients/postcodeClient';
+import { testData } from '../test-data/postcodes';
+import { postcodeSchema } from '../schemas/postcode.schema';
+import { validateSchema } from '../utils/ajvValidator';
+
+test.describe('Zippopotam.us Postcode API', () => {
+  let client: PostcodeClient;
+
+  test.beforeEach(async ({ request }) => {
+    client = new PostcodeClient(request);
+  });
+
+  // -----------------------------
+  // POSITIVE TESTS (US + GB)
+  // -----------------------------
+
+  const countries = [
+    {
+      country: 'us',
+      postcode: testData.us.validPostcode,
+      expectedCountry: testData.us.country,
+      expectedCountryAbbreviation: testData.us.countryAbbreviation
+    },
+    {
+      country: 'gb',
+      postcode: testData.gb.validPostcode,
+      expectedCountry: testData.gb.country,
+      expectedCountryAbbreviation: testData.gb.countryAbbreviation
+    }
+  ];
+
+  for (const data of countries) {
+    test(`Validate ${data.country.toUpperCase()} postcode returns correct data`, async () => {
+      const response = await client.getPostcode(data.country, data.postcode);
+
+      expect(response.status()).toBe(200);
+
+      const body = await response.json();
+
+      expect(body.country).toBe(data.expectedCountry);
+      expect(body['post code']).toBe(data.postcode);
+      expect(body['country abbreviation']).toBe(data.expectedCountryAbbreviation);
+      
+      expect(Array.isArray(body.places)).toBe(true);
+      expect(body.places.length).toBeGreaterThan(0);
+
+      // First place validation
+     const place = body.places[0];
+
+     expect(typeof place['place name']).toBe('string');
+     expect(place['place name'].trim().length).toBeGreaterThan(0);
+
+     expect(typeof place.state).toBe('string');
+     expect(place.state.trim().length).toBeGreaterThan(0);
+
+     expect(typeof place.latitude).toBe('string');
+     expect(!isNaN(Number(place.latitude))).toBe(true);
+
+     expect(typeof place.longitude).toBe('string');
+     expect(!isNaN(Number(place.longitude))).toBe(true);
+    });
+  }
+
+  // -----------------------------
+  // NEGATIVE TESTS
+  // -----------------------------
+
+  test('Returns 404 for invalid US postcode', async () => {
+    const response = await client.getPostcode('us', 'INVALID');
+    expect(response.status()).toBe(404);
+  });
+
+  test('Returns 404 for invalid GB postcode', async () => {
+    const response = await client.getPostcode('gb', 'INVALID');
+    expect(response.status()).toBe(404);
+  });
+
+  test('Returns 404 for invalid endpoint', async ({ request }) => {
+    const response = await request.get('https://api.zippopotam.us/invalid-endpoint');
+    expect(response.status()).toBe(404);
+  });
+
+  // -----------------------------
+  // CONTRACT TEST (SCHEMA VALIDATION)
+  // -----------------------------
+
+  test('Response matches postcode schema (US)', async () => {
+    const response = await client.getPostcode('us', testData.us.validPostcode);
+    expect(response.status()).toBe(200);
+    const body = await response.json();
+    const isValid = validateSchema(postcodeSchema, body);
+    expect(isValid).toBe(true);
+  });
+
+  test('Response matches postcode schema (GB)', async () => {
+    const response = await client.getPostcode('gb', testData.gb.validPostcode);
+    expect(response.status()).toBe(200);
+    const body = await response.json();
+    const isValid = validateSchema(postcodeSchema, body);
+    expect(isValid).toBe(true);
+  });
+
+  // -----------------------------
+  // PERFORMANCE SMOKE TEST
+  // -----------------------------
+
+  test('Response time should be under 2 seconds (US postcode)', async () => {
+    const start = Date.now();
+    const response = await client.getPostcode('us', testData.us.validPostcode);
+    const duration = Date.now() - start;
+
+    expect(response.status()).toBe(200);
+    expect(duration).toBeLessThan(2000);
+  });
+});
+
+---------------------------------------------------------
+6. README
+---------------------------------------------------------
+# Postcode API Automation Suite
+
+## Overview
+Automation suite for testing Zippopotam.us API using Playwright Test.
+
+## Tech Stack
+- Playwright Test
+- TypeScript
+- AJV (schema validation)
+
+## Test Coverage
+- Valid US postcode retrieval
+- Valid GB postcode retrieval
+- Invalid postcode handling
+- Invalid endpoint handling
+- JSON schema validation (contract testing)
+- Basic response time validation
+
+## Design Approach
+- Client abstraction layer for API calls
+- Separation of test data, schema, and test logic
+- Combination of functional + contract testing
+
+## Framework Choice
+
+Playwright Test was selected because it provides a lightweight test runner with excellent support for REST API testing through its built-in APIRequestContext. This removes the need for additional HTTP libraries while providing assertions, reporting and parallel execution.
+
+## How to Run
+npm install
+npm test
+
+## Key Assumptions
+- API is public and unauthenticated
+- Only US and GB are required per backlog
+- API returns stable JSON structure
+
+## Notes
+
+The backlog specifies support for US and Great Britain only. During exploratory testing I verified the public API behaviour and aligned the automated tests with the live responses returned by the service. Any differences between the documented requirements and the live API would be raised with the Product Owner for clarification.
+
+---------------------------------------------------------
+7. Assumptions
+---------------------------------------------------------
+
+- The API is publicly accessible.
+- No authentication is required.
+- The API is available during execution.
+- The live API response is considered the source of truth.
+- The backlog scope is limited to US and Great Britain.
+
+---------------------------------------------------------
+8. Limitations
+---------------------------------------------------------
+
+- The performance check is a basic smoke test rather than a full performance assessment.
+- Load and stress testing are outside the scope of this exercise.
+- The suite validates the successful response schema only.
