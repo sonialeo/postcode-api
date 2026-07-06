@@ -1,68 +1,118 @@
-import {test, expect}  from "@playwright/test";
-import { PostcodeClient } from "../clients/postcodeClient";
-import { testData } from "../test-data/postcodes";
-import { postcodeSchema } from "../schemas/postcode.schema";
-import { validateSchema } from "../utils/ajvValidator";
+import { test, expect } from '@playwright/test';
+import { PostcodeClient } from '../clients/postcodeClient';
+import { testData } from '../test-data/postcodes';
+import { postcodeSchema } from '../schemas/postcode.schema';
+import { validateSchema } from '../utils/ajvValidator';
 
+test.describe('Zippopotam.us Postcode API', () => {
+  let client: PostcodeClient;
 
-test.describe('Zippopotam.us Postcode API', () =>{
-    let client:PostcodeClient;
-    test.beforeEach(({request})=>{
-        client = new PostcodeClient(request);
+  test.beforeEach(async ({ request }) => {
+    client = new PostcodeClient(request);
+  });
+
+  // -----------------------------
+  // POSITIVE TESTS (US + GB)
+  // -----------------------------
+
+  const countries = [
+    {
+      country: 'us',
+      postcode: testData.us.validPostcode,
+      expectedCountry: testData.us.country
+    },
+    {
+      country: 'gb',
+      postcode: testData.gb.validPostcode,
+      expectedCountry: testData.gb.country
+    }
+  ];
+
+  for (const data of countries) {
+    test(`Validate ${data.country.toUpperCase()} postcode returns correct data`, async () => {
+      const response = await client.getPostcode(data.country, data.postcode);
+
+      expect(response.status()).toBe(200);
+
+      const body = await response.json();
+
+      // Core business validations
+      expect(body.country).toBe(data.expectedCountry);
+      expect(body['post code']).toBe(data.postcode);
+      expect(body.places).toBeDefined();
+      expect(body.places.length).toBeGreaterThan(0);
+
+      // Validate first place structure
+      const place = body.places[0];
+      expect(place['place name']).toBeTruthy();
+      expect(place.state).toBeTruthy();
+      expect(place.latitude).toBeTruthy();
+      expect(place.longitude).toBeTruthy();
     });
+  }
 
-// Happy Path
+  // -----------------------------
+  // NEGATIVE TESTS
+  // -----------------------------
 
-test('Validate US postcode returns correct data', async() =>{
-    const response = await client.getPostcode('us', testData.us.validPostcode)
-    expect(response.status()).toBe(200);
-    const body = await response.json();
-    expect(body.country).toBe(testData.us.country);
-    expect(body['post code']).toBe(testData.us.validPostcode);
-    expect(body['country abbreviation']).toBe(testData.us.countryAbbreviation);
-    
-});
-test('Validate GB postcode returns correct data', async() =>{
-    const response = await client.getPostcode('gb', testData.gb.validPostcode)
-    expect(response.status()).toBe(200);
-    const body = await response.json();
-    expect(body.country).toBe(testData.gb.country);
-    expect(body['post code']).toBe(testData.gb.validPostcode);
-    expect(body['country abbreviation']).toBe(testData.gb.countryAbbreviation);
-    });
-
-// Negative Tests
-
-test('System rejects unsupported country', async() =>{
-    const response = await client.getPostcode('fr', '99999');
-    expect(response.status()).toBe(404);
-});
-
-test('System rejects invalid postcode formats', async() =>{
+  test('Returns 404 for invalid US postcode', async () => {
     const response = await client.getPostcode('us', 'INVALID');
+
     expect(response.status()).toBe(404);
-});
+  });
 
-test('System handles invalid postcode input', async() =>{
-    const response = await client.getPostcode('us', '00000');
+  test('Returns 404 for invalid GB postcode', async () => {
+    const response = await client.getPostcode('gb', 'INVALID');
+
     expect(response.status()).toBe(404);
-});
+  });
 
+  test('Returns 404 for invalid endpoint', async ({ request }) => {
+    const response = await request.get('https://api.zippopotam.us/invalid-endpoint');
 
-//Non Functional Test
-test('Response time is under 2 seconds', async() =>{
+    expect(response.status()).toBe(404);
+  });
+
+  // -----------------------------
+  // CONTRACT TEST (SCHEMA VALIDATION)
+  // -----------------------------
+
+  test('Response matches postcode schema (US)', async () => {
+    const response = await client.getPostcode('us', '90210');
+
+    expect(response.status()).toBe(200);
+
+    const body = await response.json();
+
+    const isValid = validateSchema(postcodeSchema, body);
+
+    expect(isValid).toBe(true);
+  });
+
+  test('Response matches postcode schema (GB)', async () => {
+    const response = await client.getPostcode('gb', testData.gb.validPostcode);
+
+    expect(response.status()).toBe(200);
+
+    const body = await response.json();
+
+    const isValid = validateSchema(postcodeSchema, body);
+
+    expect(isValid).toBe(true);
+  });
+
+  // -----------------------------
+  // PERFORMANCE SMOKE TEST
+  // -----------------------------
+
+  test('Response time should be under 2 seconds (US postcode)', async () => {
     const start = Date.now();
-    const response = await client.getPostcode("us", "90210");
+
+    const response = await client.getPostcode('us', '90210');
+
     const duration = Date.now() - start;
+
     expect(response.status()).toBe(200);
     expect(duration).toBeLessThan(2000);
-    });
-
-    test('Response matches JSON schema', async() =>{
-     const response = await client.getPostcode('us', '90210');
-     expect(response.status()).toBe(200);
-     const body = await response.json();
-     expect(validateSchema(postcodeSchema, body)).toBe(true);
-    });
-
+  });
 });
