@@ -5,7 +5,7 @@ export const testData = {
     countryAbbreviation: 'US'
   },
   gb: {
-    validPostcode: 'SW1A',
+    validPostcode: 'AB10',
     country: 'Great Britain',
     countryAbbreviation: 'GB'
   }

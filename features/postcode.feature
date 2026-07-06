@@ -6,7 +6,8 @@ Feature: Retrieve postcode information
   So that I can validate postcode details for supported countries
 
   Background:
-    Given the postcode API is available
+     Given the postcode API base URL is "https://api.zippopotam.us"
+    And the postcode API is available
 
   Scenario Outline: Retrieve postcode information for a valid postcode
     When I request postcode "<postcode>" for country "<country>"
@@ -18,7 +19,7 @@ Feature: Retrieve postcode information
     Examples:
       | country | postcode  | expectedCountry |
       | us      | 90210     | United States   |
-      | gb      | SW1A 1AA  | United Kingdom  |
+      | gb      | AB10      | Great Britain   |
 
   Scenario Outline: Invalid postcode returns 404
     When I request postcode "<postcode>" for country "<country>"
@@ -33,7 +34,8 @@ Feature: Retrieve postcode information
     When I request an endpoint that does not exist
     Then the response status should be 404
 
-  Scenario: Response matches the expected schema
+  Scenario: Response body should match the postcode API contract
     When I request postcode "90210" for country "us"
-    Then the response should match the postcode schema
+    Then the response status should be 200
+    And the response should match the postcode schema
 ```

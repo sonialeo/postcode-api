@@ -19,12 +19,14 @@ test.describe('Zippopotam.us Postcode API', () => {
     {
       country: 'us',
       postcode: testData.us.validPostcode,
-      expectedCountry: testData.us.country
+      expectedCountry: testData.us.country,
+      expectedCountryAbbreviation: testData.us.countryAbbreviation
     },
     {
       country: 'gb',
       postcode: testData.gb.validPostcode,
-      expectedCountry: testData.gb.country
+      expectedCountry: testData.gb.country,
+      expectedCountryAbbreviation: testData.gb.countryAbbreviation
     }
   ];
 
@@ -39,15 +41,25 @@ test.describe('Zippopotam.us Postcode API', () => {
       // Core business validations
       expect(body.country).toBe(data.expectedCountry);
       expect(body['post code']).toBe(data.postcode);
-      expect(body.places).toBeDefined();
+      expect(body['country abbreviation']).toBe(data.expectedCountryAbbreviation);
+      
+      expect(Array.isArray(body.places)).toBe(true);
       expect(body.places.length).toBeGreaterThan(0);
 
-      // Validate first place structure
-      const place = body.places[0];
-      expect(place['place name']).toBeTruthy();
-      expect(place.state).toBeTruthy();
-      expect(place.latitude).toBeTruthy();
-      expect(place.longitude).toBeTruthy();
+      // First place validation
+     const place = body.places[0];
+
+     expect(typeof place['place name']).toBe('string');
+     expect(place['place name'].trim().length).toBeGreaterThan(0);
+
+     expect(typeof place.state).toBe('string');
+     expect(place.state.trim().length).toBeGreaterThan(0);
+
+     expect(typeof place.latitude).toBe('string');
+     expect(!isNaN(Number(place.latitude))).toBe(true);
+
+     expect(typeof place.longitude).toBe('string');
+     expect(!isNaN(Number(place.longitude))).toBe(true);
     });
   }
 
@@ -57,19 +69,16 @@ test.describe('Zippopotam.us Postcode API', () => {
 
   test('Returns 404 for invalid US postcode', async () => {
     const response = await client.getPostcode('us', 'INVALID');
-
     expect(response.status()).toBe(404);
   });
 
   test('Returns 404 for invalid GB postcode', async () => {
     const response = await client.getPostcode('gb', 'INVALID');
-
     expect(response.status()).toBe(404);
   });
 
   test('Returns 404 for invalid endpoint', async ({ request }) => {
     const response = await request.get('https://api.zippopotam.us/invalid-endpoint');
-
     expect(response.status()).toBe(404);
   });
 
@@ -78,38 +87,28 @@ test.describe('Zippopotam.us Postcode API', () => {
   // -----------------------------
 
   test('Response matches postcode schema (US)', async () => {
-    const response = await client.getPostcode('us', '90210');
-
+    const response = await client.getPostcode('us', testData.us.validPostcode);
     expect(response.status()).toBe(200);
-
     const body = await response.json();
-
     const isValid = validateSchema(postcodeSchema, body);
-
     expect(isValid).toBe(true);
   });
 
   test('Response matches postcode schema (GB)', async () => {
     const response = await client.getPostcode('gb', testData.gb.validPostcode);
-
     expect(response.status()).toBe(200);
-
     const body = await response.json();
-
     const isValid = validateSchema(postcodeSchema, body);
-
     expect(isValid).toBe(true);
   });
 
   // -----------------------------
-  // PERFORMANCE SMOKE TEST
+  // NON-FUNCTIONAL TEST
   // -----------------------------
 
   test('Response time should be under 2 seconds (US postcode)', async () => {
     const start = Date.now();
-
-    const response = await client.getPostcode('us', '90210');
-
+    const response = await client.getPostcode('us', testData.us.validPostcode);
     const duration = Date.now() - start;
 
     expect(response.status()).toBe(200);
